@@ -3,7 +3,7 @@ ann_root: 'annotation'
 dataset: 'retrieval_cuhk'
 
 # set pretrained as a file path or an url
-pretrained: 'checkpoint/model_base.pth'
+pretrained: 'checkpoint/pretrained_model.pth'
 
 # size of vit model; base or large
 

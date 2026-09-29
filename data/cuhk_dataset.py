@@ -1,25 +1,19 @@
 import os
 import json
-
 from torch.utils.data import Dataset
-
 from PIL import Image
-
 from data.utils import pre_caption
 
 
 def split_CUHK_PEDE():
-    root_dir = '/workspace/MHA/datasets/CUHK-PEDES'
+    root_dir = '/datasets/CUHK-PEDES'
     raw_dir = 'reid_raw.json'
-    all_dir = 'caption_all.json'
-
     with open(os.path.join(root_dir,raw_dir),'r') as f:
         cap_list = json.load(f)
 
     train_list = []
     val_list = []
     test_list = []
-    #counting = {i:[0,0] for i in range(1, 13003 + 1)}
 
     for info in cap_list:
         if info['split'] == 'train':
@@ -27,6 +21,8 @@ def split_CUHK_PEDE():
             info2 = info.copy()
             info1['captions'] = info['captions'][0]
             info2['captions'] = info['captions'][1]
+            info1['grain'] = 2
+            info2['grain'] = 2
             train_list.append(info1)
             train_list.append(info2)
         elif info['split'] == 'test':
@@ -34,32 +30,11 @@ def split_CUHK_PEDE():
         else:
             val_list.append(info)
 
-        #counting[info['id']][0] += 1
-        #counting[info['id']][1] += int(len(info['captions']))
-
-
-    """stat_img = {i:0 for i in range(30)}
-    stat_cap = {i:0 for i in range(60)}
-    for i in range(1, 13003 + 1):
-
-        stat_img[counting[i][0]] += 1
-        stat_cap[counting[i][1]] += 1
-
-    sum_img = 0
-    sum_cap = 0
-    for i in range(30):
-        sum_img += stat_img[i] * i
-    for i in range(60):
-        sum_cap += stat_cap[i] * i
-
-    print(sum_img)
-    print(sum_cap)"""
-
     return train_list, val_list, test_list
 
 
 def split_ICFG_PEDE():
-    root_dir = '/workspace/MHA/datasets/ICFG-PEDES'
+    root_dir = '/datasets/ICFG-PEDES'
     raw_dir = 'split.json'
 
     with open(os.path.join(root_dir, raw_dir), 'r') as f:
@@ -77,8 +52,8 @@ class mix_pede_train(Dataset):
         image_root (string): Root directory of images (e.g. coco/images/)
         ann_root (string): directory to store the annotation file
         '''
-        cuhk_path = '/workspace/MHA/datasets/CUHK-PEDES/imgs'
-        icfg_path = '/workspace/MHA/datasets/ICFG-PEDES/'
+        cuhk_path = '/datasets/CUHK-PEDES/imgs'
+        icfg_path = '/datasets/ICFG-PEDES/'
         train_list, _, _ = split_CUHK_PEDE()
         self.annotation = train_list
         self.transform = transform
@@ -149,15 +124,14 @@ class cuhk_pede_train(Dataset):
         image = self.transform(image)
         captions = ann['captions']
         captions = self.prompt+pre_caption(captions, self.max_words)
-        return image, captions, self.img_ids[ann['id']]
+        grain_label = ann['grain']
+        return image, captions, self.img_ids[ann['id']], grain_label
 
 
 class cuhk_pede_caption_eval(Dataset):
     def __init__(self, transform, image_root, split):
         _, val_list, test_list = split_CUHK_PEDE()
-
         assert split in ['val','test']
-
         if split == 'val':
             self.annotation = val_list
         elif split == 'test':
@@ -169,15 +143,11 @@ class cuhk_pede_caption_eval(Dataset):
         return len(self.annotation)
 
     def __getitem__(self, index):
-
         ann = self.annotation[index]
-
         image_path = os.path.join(self.image_root,ann['file_path'])
         image = Image.open(image_path).convert('RGB')
         image = self.transform(image)
-
         img_id = ann['id']
-
         return image, img_id
 
 
@@ -185,7 +155,6 @@ class cuhk_pede_retrieval_eval(Dataset):
     def __init__(self, transform, image_root, split, max_words=72):
         train_list, val_list, test_list = split_CUHK_PEDE()
         assert split in ['val', 'test']
-
         if split == 'val':
             self.annotation = val_list
         elif split == 'test':
@@ -260,7 +229,6 @@ class cuhk_pede_trainset_eval(Dataset):
         txt_id = 0
         for img_id, ann in enumerate(self.annotation):
             self.image.append(ann['file_path'])
-
             self.text.append(pre_caption(ann['captions'],max_words))
             pid = ann['id']
             self.img2pid[img_id] = pid
@@ -282,11 +250,9 @@ class cuhk_pede_trainset_eval(Dataset):
         return len(self.annotation)
 
     def __getitem__(self, index):
-
         image_path = os.path.join(self.image_root, self.annotation[index]['file_path'])
         image = Image.open(image_path).convert('RGB')
         image = self.transform(image)
-
         return image, index
 
 

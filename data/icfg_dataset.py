@@ -2,22 +2,16 @@ import os
 import json
 import random
 from torch.utils.data import Dataset
-
 from PIL import Image
-
 from data.utils import pre_caption
 
 def split_ICFG_PEDE():
-    root_dir = '/workspace/MHA/datasets/ICFG-PEDES'
+    root_dir = '/datasets/ICFG-PEDES'
     raw_dir = 'ICFG-PEDES.json'
 
     with open(os.path.join(root_dir, raw_dir), 'r') as f:
         cap_list = json.load(f)
 
-    """train_list = cap_list['train'].copy()
-    val_list = cap_list['test'].copy()
-    test_list = cap_list['test'].copy()"""
-    #0~7365   7366~18239 18240~32874
     train_list, val_list, test_list = [], [], []
     for cap in cap_list:
         if cap['split'] == 'train':
@@ -33,7 +27,6 @@ def split_ICFG_PEDE():
 
 class icfg_pede_train(Dataset):
     def __init__(self, transform, image_root, max_words=72, prompt=''):
-
         train_list, _, _= split_ICFG_PEDE()
         self.annotation = train_list
         self.transform = transform
@@ -59,7 +52,8 @@ class icfg_pede_train(Dataset):
         image = self.transform(image)
         captions = ann['captions'][0]
         captions = self.prompt + pre_caption(captions, self.max_words)
-        return image, captions, self.img_ids[ann['id']]
+        grain_label = 2
+        return image, captions, self.img_ids[ann['id']], grain_label
 
 class icfg_pede_retrieval_eval(Dataset):
     def __init__(self, transform, image_root, split, max_words=72):
@@ -108,7 +102,6 @@ class icfg_pede_retrieval_eval(Dataset):
         return len(self.annotation)
 
     def __getitem__(self, index):
-
         image_path = os.path.join(self.image_root,self.annotation[index]['file_path'])
         image = Image.open(image_path).convert('RGB')
         image = self.transform(image)

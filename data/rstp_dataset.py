@@ -1,16 +1,12 @@
 import os
 import json
-
 from torch.utils.data import Dataset
-
 from PIL import Image
-
 from data.utils import pre_caption
 
 def split_RSTP_PEDE():
-    root_dir = '/workspace/MHA/datasets/RSTPReid'
+    root_dir = '/datasets/RSTPReid'
     raw_dir = 'data_captions.json'
-
     with open(os.path.join(root_dir, raw_dir), 'r') as f:
         cap_list = json.load(f)
 
@@ -35,7 +31,6 @@ def split_RSTP_PEDE():
 
 class rstp_pede_train(Dataset):
     def __init__(self, transform, image_root, max_words=72, prompt=''):
-
         train_list, _, _= split_RSTP_PEDE()
         self.annotation = train_list
         self.transform = transform
@@ -61,7 +56,8 @@ class rstp_pede_train(Dataset):
         image = self.transform(image)
         captions = ann['captions']
         captions = self.prompt + pre_caption(captions, self.max_words)
-        return image, captions, self.img_ids[ann['id']]
+        grain_label = 2
+        return image, captions, self.img_ids[ann['id']], grain_label
 
 class rstp_pede_retrieval_eval(Dataset):
     def __init__(self, transform, image_root, split, max_words=72):
@@ -113,7 +109,6 @@ class rstp_pede_retrieval_eval(Dataset):
         return len(self.annotation)
 
     def __getitem__(self, index):
-
         image_path = os.path.join(self.image_root,self.annotation[index]['img_path'])
         image = Image.open(image_path).convert('RGB')
         image = self.transform(image)

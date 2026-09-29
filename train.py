@@ -15,10 +15,11 @@ import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 from torch.utils.data import DataLoader
 
-from models.cada import build_model
+from models.mgreid import build_model
 import utils
 from utils import cosine_lr_schedule, cos_with_warmup_lr_scheduler
 from data import create_dataset, create_sampler, create_loader
+
 
 def train(model, data_loader, optimizer, epoch, device, config):
     model.train()
@@ -27,20 +28,24 @@ def train(model, data_loader, optimizer, epoch, device, config):
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.8f}'))
     metric_logger.add_meter('loss_glb', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
     metric_logger.add_meter('loss_loc', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
-    metric_logger.add_meter('loss_ara', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
+    metric_logger.add_meter('loss_verb', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
+    metric_logger.add_meter('loss_ada', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
+    metric_logger.add_meter('loss_gra', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
 
     header = 'Train Epoch: [{}]'.format(epoch)#
     print_freq = 100
 
-    for i,(image, caption, img_pid) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+    for i,(image, caption, img_pid, grain_label) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         image = image.to(device,non_blocking=True)
         img_pid = img_pid.to(device,non_blocking=True)
 
-        loss_glb, loss_loc, loss_ara= model(image, caption, idx=img_pid)
-        loss_glb = loss_glb * 1.
-        loss_loc = loss_loc * 1.
-        loss_ara = loss_ara * 0.1
-        loss = loss_glb + loss_loc + loss_ara
+        loss_glb, loss_loc, loss_verb, loss_ada, loss_gra = model(image, caption, idx=img_pid, grain_label=grain_label)
+        loss_glb = loss_glb * 1.0
+        loss_loc = loss_loc * 1.0
+        loss_verb = loss_verb * 0.2
+        loss_ada = loss_ada * 0.5
+        loss_gra = loss_gra * 1.0
+        loss = loss_glb + loss_loc + loss_verb + loss_ada + loss_gra
 
         optimizer.zero_grad()
         loss.backward()
@@ -48,13 +53,16 @@ def train(model, data_loader, optimizer, epoch, device, config):
 
         metric_logger.update(loss_loc=loss_loc.item())
         metric_logger.update(loss_glb=loss_glb.item())
-        metric_logger.update(loss_ara=loss_ara.item())
+        metric_logger.update(loss_verb=loss_verb.item())
+        metric_logger.update(loss_ada=loss_ada.item())
+        metric_logger.update(loss_gra=loss_gra.item())
         metric_logger.update(lr=optimizer.param_groups[0]['lr'])
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger.global_avg())
     return {k: "{:.8f}".format(meter.global_avg) for k, meter in metric_logger.meters.items()}
+
 
 @torch.no_grad()
 def evaluation(model, data_loader, device, config, itm=False):
@@ -73,12 +81,22 @@ def evaluation(model, data_loader, device, config, itm=False):
     text_ids = []
     text_embeds = []
     text_atts = []
-
+    prompt_embedding = model.prompt_embedding.to(device)
+    prompt_length = prompt_embedding.size(0)
     for i in range(0, num_text, text_bs):
         text = texts[i: min(num_text, i+text_bs)]
-        text_input = model.tokenizer(text, padding='max_length', truncation=True, max_length=73, return_tensors="pt").to(device)
-        text_output = model.text_encoder(text_input.input_ids, attention_mask=text_input.attention_mask, mode='text')
-        text_embed = F.normalize(model.text_proj(text_output.last_hidden_state[:, 0, :]))
+        
+        text_input = model.tokenizer(text, padding='max_length', truncation=True, max_length=72, return_tensors="pt").to(device)
+        input_ids, attention_mask = text_input["input_ids"].to(device), text_input["attention_mask"].to(device)
+        batch_size = input_ids.shape[0]
+        prompt_tokens = prompt_embedding.unsqueeze(0).expand(batch_size, -1, -1)
+        input_embeds = model.text_encoder.get_input_embeddings()(input_ids)
+        input_embeds = torch.cat([prompt_tokens, input_embeds], dim=1) 
+        prompt_attention = torch.ones((batch_size, prompt_length), dtype=torch.long, device=device)
+        extended_attention_mask = torch.cat([prompt_attention, attention_mask], dim=1)
+
+        text_output = model.text_encoder(inputs_embeds=input_embeds, attention_mask=extended_attention_mask, mode='text')
+        text_embed = F.normalize(model.text_proj(text_output.last_hidden_state[:, prompt_length, :]))
         text_embeds.append(text_embed)
         text_ids.append(text_input.input_ids)
         text_atts.append(text_input.attention_mask)
