@@ -109,7 +109,7 @@ Evaluate a fine-tuned checkpoint with the matching benchmark configuration:
 bash eval.bash
 ```
 
-The evaluation code reports **Recall@1**, **Recall@5**, **Recall@10**, and **mAP**.
+The evaluation code reports **Rank@1**, **Rank@5**, **Rank@10**, and **mAP**.
 
 
 ## Acknowledgments
